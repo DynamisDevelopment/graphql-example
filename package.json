@@ -10,7 +10,7 @@
     "nodemon": "^1.19.1"
   },
   "scripts": {
-    "start": "nodemon server-dist.js"
+    "start": "node server-dist.js"
   },
   "author": "",
   "license": "ISC"
