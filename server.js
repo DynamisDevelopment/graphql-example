@@ -54,4 +54,7 @@ const resolvers = {
 
 const server = new GraphQLServer({ typeDefs, resolvers })
 
-server.start(() => console.log('server running'))
+const port = process.env.PORT || 4000
+
+server.start({ port }, () => console.log('server running'))
+
