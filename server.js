@@ -1,61 +1,115 @@
-import { GraphQLServer } from 'graphql-yoga'
+import { GraphQLServer, PubSub } from 'graphql-yoga'
 
 
-const users = [
-    {
-        name: 'Chomp',
-        age: 47,
-        friends: ['Alli', 'Jaws']
-    }, {
-        name: 'Alli',
-        age: 62,
-        friends: ['Chomp', 'Jaws']
-    }, {
-        name: 'Jaws',
-        age: 35,
-        friends: ['Alli', 'Chomp']
-    },
-]
+
+const users = [];
+const pubsub = new PubSub()
 
 const typeDefs = `
- type Query {
-    user(name: String!): [User!]!
-  }
+type Query {
+    users: [User!]!
+}
 
-  type User {
+type Mutation {
+    addUser(data: AddUserInput): User!
+    deleteUser(who: String!): User!
+    updateUser(who: String!, data: UpdateUserInput): User!
+}
+
+input AddUserInput {
+    name: String!, 
+    age: Int!
+}
+
+input UpdateUserInput {
+    name: String
+    age: Int
+}
+
+type User {
     name: String!
     age: Int!
-    friends: [User!]
-  }
+}
+
+type Subscription {
+    user: UserSubscription!
+}
+
+enum MutationType {
+    CREATED
+    UPDATED 
+    DELETED
+}
+
+type UserSubscription {
+    mutation: String!
+    data: User!
+}
+
 `
 
 const resolvers = {
     Query: {
-        user(parent, args, ctx, info) {
-            if (!args.name) return users
-            else return users.filter(user => {
-                return user.name.toLowerCase().includes(args.name.toLowerCase())
-            })
+        users() {
+            return users
         }
     },
-    User: {
-        friends(parent, args, ctx, info) {
-            const friends = []
+    Mutation: {
+        addUser(parent, args, ctx, info) {
+            const user = { ...args.data }
 
-            parent.friends.forEach(friend => users.filter(user => {
-                if (user.name.toLowerCase().includes(friend.toLowerCase())) friends.push(user)
-            }))
+            users.push(user)
 
-            return friends
+            pubsub.publish('user', {
+                user: {
+                    mutation: 'Added',
+                    data: user
+                }
+            })
+
+            return user
+        },
+        deleteUser(parent, args, ctx, info) {
+            const userIndex = users.findIndex(user => user.name.toLowerCase() === args.who.toLowerCase());
+            if (userIndex === -1) throw new Error('User not found')
+
+            const user = users.splice(userIndex, 1)
+            pubsub.publish('user', {
+                user: {
+                    mutation: 'Deleted',
+                    data: user[0]
+                }
+            })
+
+            return user[0]
+        },
+        updateUser(parent, args, ctx, info) {
+            const user = users.find(user => user.name.toLowerCase() === args.who.toLowerCase())
+            if (!user) throw new Error('User not found')
+
+            if (typeof args.data.name === "string") user.name = args.data.name
+            if (typeof args.data.age !== "undefined") user.age = args.data.age
+
+            pubsub.publish('user', {
+                user: {
+                    mutation: 'Updated',
+                    data: user
+                }
+            })
+
+            return user
+        }
+    },
+    Subscription: {
+        user: {
+            subscribe(parent, args, ctx, info) {
+                return pubsub.asyncIterator('user')
+            }
         }
     }
-
 }
 
 const server = new GraphQLServer({ typeDefs, resolvers })
-const options = {
-    port: process.env.PORT || 4000,
-    playground: '/playground'
-}
-server.start(options, () => console.log('server running'))
+
+server.start(() => console.log('server running'))
 
